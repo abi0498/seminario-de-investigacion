@@ -1,6 +1,7 @@
 # Instalar paquetes necesarios (si no los tienes)
 install.packages(c("readxl", "YieldCurve", "vars", "tidyverse", "ggplot2"))
 
+#####
 # Cargar librerías
 install.packages("YieldCurve")
 install.packages("DNS")  # si quieres Dynamic Nelson-Siegel
@@ -43,14 +44,16 @@ colnames(data) <- c("Period", "M1_avg", "M1_ult", "M3_avg", "M3_ult",
                           "M6_avg", "M6_ult", "Y2_avg", "Y2_ult", "Y5_avg",
                           "Y5_ult", "Y7_avg", "Y7_ult", "Y10_avg", "Y10_ult")
 
-seq(0.01, 2, length.out = 200)
 datas<-data[-c(1:4,196:226), ]
 datas1<-datas[,-c(2,4,6,8,10,12,14)]  
-datas1[ , 2:(ncol(datas1)-1)] <- lapply(datas1[ , 2:(ncol(datas1)-1)], as.numeric)
+
+cols <- c("M1_ult", "M3_ult", "M6_ult", "Y2_ult", "Y5_ult", "Y7_ult", "Y10_ult")
+
+datas1[cols] <- lapply(datas1[cols], as.numeric)
+
 str(datas1)
 datas1$Period
-e
-exp(1)
+
 tau <- c(1/12, 3/12, 6/12, 2, 5, 7, 10)  # 1m, 3m, 6m, 2a, 5a, 7a, 10a
 landa<-0.0609
 f1<- matrix(1, 191, 1)
@@ -69,14 +72,14 @@ f4<-function(x) {
   # Ejemplo: función cuadrática
   return(((1-exp(-landa*x))/(landa*x)) -exp(-landa*x) )
 }
-f2(3)
+
 
 
 
 library(lubridate)
 
 datas1$Period_date <- ym(datas1$Period)
-
+str(datas1)
 yields_matrix <- as.matrix(datas1[ , -c(1,9)]) 
 str(yields_matrix)
 landa<-0.0601
@@ -91,9 +94,7 @@ betasts <- t(betas)
 
 print(colSums(is.na(yields_matrix)))
 
-# Verificar rangos de tasas
-print("Resumen de tasas:")
-print(summary(as.vector(yields_matrix)))
+
 
 y_real <- yields_matrix[c(1:5), ] 
 y_estp<-Y_est[c(1:5), ]
@@ -127,6 +128,7 @@ sse_lambda <- function(lamda, yields_matrix, tau)
 lambda_grid <- seq(0.01, 2, length.out = 200)
 sse_vals <- sapply(lambda_grid, sse_lambda, yields_matrix = yields_matrix, tau = tau)
 
+##este sera el landa que minimiza el error
 lambda_hat_grid <- lambda_grid[which.min(sse_vals)]
 
 plot(lambda_grid, sse_vals, type = "l", lwd = 2,
@@ -137,7 +139,7 @@ plot(lambda_grid, sse_vals, type = "l", lwd = 2,
 landa<-lambda_hat_grid
 
 f3 <- function(x) {
-  # Ejemplo: función cuadrática
+  
   return((1-exp(-landa*x))/(landa*x))
 }
 f4<-function(x) {
@@ -323,24 +325,15 @@ ggplot(datos_errores, aes(x = Period_date, y = Tasa, color = Plazo)) +
   scale_y_continuous(limits = c(0, NA))
 
 
-plot(tau, yields_matrix, type="b", pch=19, xaxt="n",
-     xlab="Maturities", ylab="Yield",
-     main=paste("Curva observada vs estimada (t =", t, ")"))
-axis(1, at=1:7, labels=c("M1","M3","M6","Y2","Y5","Y7","Y10"))
-lines(1:7, y_est, type="b", pch=17, col="blue")
-legend("bottomright", legend=c("Observado","Estimado"), 
-       col=c("black","blue"), pch=c(19,17), lty=1)
 
 
-#############################################
-#residuos
 
 
-res<-yields_matrix- Y_est
+
 
 
 ########################################################## predicciones modelo var
-
+#esta son las predicciones que estoy trabajando
 install.packages(c("vars","MASS"))
 library(vars)
 library(MASS)
