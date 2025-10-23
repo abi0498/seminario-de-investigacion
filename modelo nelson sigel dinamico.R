@@ -27,13 +27,16 @@ system("git config --global --list")
 system("git init")
 system("git remote add origin https://github.com/abi0498/seminario-de-investigacion")
 
+getwd()
+list.files()
 
-
-mi_carpeta <- "C:/Users/abies/Downloads"
-setwd("C:/Users/abies/Downloads")
+mi_carpeta <- "C:/Users/abies/OneDrive/Escritorio"
+setwd("C:/Users/abies/OneDrive/Escritorio/GitHub/seminario-de-investigacion")
 # Para archivos Excel
 archivos_xlsx <- list.files(mi_carpeta, pattern = "\\.xlsx$", full.names = TRUE)
 data <- read_excel("ADVANCED RESULT_2025-09-15_21_32.xlsx", sheet = "Exported data")
+dataac<-read_excel("ADVANCED RESULT_2025-10-20_03_22.xlsx", sheet = "Exported data")
+  
 
 
 
@@ -333,14 +336,87 @@ ggplot(datos_errores, aes(x = Period_date, y = Tasa, color = Plazo)) +
 
 
 ########################################################## predicciones modelo var
+#################################################################################
 #esta son las predicciones que estoy trabajando
+#aqui utilizaremos varios enfoques
+#probar con transformaciones para los betas, estacionaria, cointegrada y los betas que estimamos 
 install.packages(c("vars","MASS"))
 library(vars)
 library(MASS)
+library(tseries)
+library(urca)
+library(forecast)
+library(vars)
 
 frequency_val <- 12   # 
 h <- 4 
 
+
+
+
+beta0 <- betasts[, 1]  # Primera columna
+beta1 <- betasts[, 2]  # Segunda columna  
+beta2 <- betasts[, 3]  # Tercera columna
+
+###### analisis estacionario de mis betas estimados
+## primero para beta0
+
+adf_beta0 <- adf.test(na.omit(beta0))
+print(adf_beta0)
+
+## segundo para beta1
+
+adf_beta1 <- adf.test(na.omit(beta1))
+print(adf_beta1)
+
+## tercera para beta2
+
+adf_beta2 <- adf.test(na.omit(beta2))
+print(adf_beta2)
+
+##otra prueba 
+kpss_beta0 <- kpss.test(na.omit(beta0), null = "Level")
+print(kpss_beta0)
+
+kpss_beta1 <- kpss.test(na.omit(beta1), null = "Level")
+print(kpss_beta1)
+
+kpss_beta2 <- kpss.test(na.omit(beta2), null = "Level")
+print(kpss_beta2)
+
+#forzar la estacionaridad
+beta0_diff <- diff(beta0)
+beta1_diff <- diff(beta1)  
+beta2_diff <- diff(beta2)
+
+# Crear matriz VAR con series diferenciadas
+longitud_minima <- min(length(beta0_diff), length(beta1_diff), length(beta2_diff))
+
+matriz_var_final <- cbind(
+  beta0_diff[1:longitud_minima],
+  beta1_diff[1:longitud_minima],
+  beta2_diff[1:longitud_minima]
+)
+
+colnames(matriz_var_final) <- c("beta0_diff", "beta1_diff", "beta2_diff")
+
+# Verificar estacionariedad después de diferenciar
+
+
+
+
+adf.test(beta0_diff)  
+adf.test(beta1_diff)    
+adf.test(beta2_diff)  
+
+kpss.test(beta0_diff)
+kpss.test(beta1_diff)
+kpss.test(beta2_diff)
+
+
+
+
+################### con mis betas sin aplicarla ninguna trasnfomacion
 betas_ts_mat <- t(betas)
 betas_ts <- ts(betas_ts_mat, frequency = frequency_val)
 
@@ -351,12 +427,135 @@ p_choice <- as.integer(sel$selection["AIC(n)"])
 
 var_model <- VAR(betas_ts, p = p_choice, type = "const")
 
-var_pred <- predict(var_model, n.ahead = h, ci = 0.95)
+var_pred <- predict(var_model, n.ahead = 80, ci = 0.95)
 var_pred$fcst
 
 beta_point <- sapply(var_pred$fcst, function(x) x[,"fcst"])
 t(beta_point)
 ypt <- t(L %*% t(beta_point))
+
+
+
+########## ahora con betas estacionarios
+
+frequency_val <- 12   # 
+h <- 4 
+
+
+beta0 <- betasts[, 1]  # Primera columna
+beta1 <- betasts[, 2]  # Segunda columna  
+beta2 <- betasts[, 3]  # Tercera columna
+
+###### analisis estacionario de mis betas estimados
+## primero para beta0
+
+adf_beta0 <- adf.test(na.omit(beta0))
+print(adf_beta0)
+
+## segundo para beta1
+
+adf_beta1 <- adf.test(na.omit(beta1))
+print(adf_beta1)
+
+## tercera para beta2
+
+adf_beta2 <- adf.test(na.omit(beta2))
+print(adf_beta2)
+
+##otra prueba 
+kpss_beta0 <- kpss.test(na.omit(beta0), null = "Level")
+print(kpss_beta0)
+
+kpss_beta1 <- kpss.test(na.omit(beta1), null = "Level")
+print(kpss_beta1)
+
+kpss_beta2 <- kpss.test(na.omit(beta2), null = "Level")
+print(kpss_beta2)
+
+# ESTRATEGIA DIFERENCIAR TODO
+
+
+beta0_diff <- diff(beta0)
+beta1_diff <- diff(beta1)  
+beta2_diff <- diff(beta2)
+
+# Crear matriz VAR con series diferenciadas
+longitud_minima <- min(length(beta0_diff), length(beta1_diff), length(beta2_diff))
+
+betasEst <- cbind(
+  beta0_diff[1:longitud_minima],
+  beta1_diff[1:longitud_minima],
+  beta2_diff[1:longitud_minima]
+)
+
+colnames(betasEst) <- c("beta0_diff", "beta1_diff", "beta2_diff")
+
+# Verificar estacionariedad después de diferenciar
+
+
+
+
+adf.test(beta0_diff)  
+adf.test(beta1_diff)    
+adf.test(beta2_diff)  
+
+kpss.test(beta0_diff)
+kpss.test(beta1_diff)
+kpss.test(beta2_diff)
+
+betas_ts_mat <- cbind(beta0, beta1, beta2)
+colnames(betas_ts_mat) <- c("beta0", "beta1", "beta2")
+
+##prueba para cointegracion
+
+johansen_test <- ca.jo(betas_ts_mat, 
+                       type = "trace",     # Test de la traza
+                       ecdet = "const",    # Incluir constante
+                       K = 2) 
+
+summary(johansen_test)
+
+johansen_test <- ca.jo(betas, type = "trace", ecdet = "none", K = 2)
+
+# 2. Ajuste del modelo VECM con r = 2
+vecm_model <- cajorls(johansen_test, r = 2)
+summary(vecm_model$rlm)
+
+
+# Convertir el VECM a VAR
+var_model <- vec2var(johansen_test, r = 2)
+
+
+# Pronóstico de 8 pasos adelante
+forecast <- predict(var_model, n.ahead = 13)
+
+# Ver los valores pronosticados
+forecast$fcst
+
+beta_pointNu <- sapply(forecast$fcst, function(x) x[,"fcst"])
+t(beta_pointNu)
+yptNu <- t(L %*% t(beta_pointNu))
+
+#ajsutamos el modelo var con los nuevos betas
+
+betas_ts_mat <- t(betas)
+
+betas_tsEst <- ts(betasEst, frequency = frequency_val)
+
+selEst <- VARselect(betas_tsEst, lag.max = 12, type = "const")
+
+selEst$selection
+
+p_choiceEst <- as.integer(selEst$selection["AIC(n)"])
+
+var_modelEst <- VAR(betas_tsEst, p = p_choiceEst, type = "const")
+
+var_predEst <- predict(var_modelEst, n.ahead = h, ci = 0.95)
+var_predEst$fcst
+
+beta_pointEst <- sapply(var_predEst$fcst, function(x) x[,"fcst"])
+t(beta_pointEst)
+yptEst <- t(L %*% t(beta_pointEst))
 
 
 
