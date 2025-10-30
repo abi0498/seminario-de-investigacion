@@ -3,6 +3,10 @@ install.packages(c("readxl", "YieldCurve", "vars", "tidyverse", "ggplot2"))
 
 #####
 # Cargar librerías
+install.packages("normtest")
+library(normtest)
+install.packages("moments")
+library(moments)
 install.packages("YieldCurve")
 install.packages("DNS")  # si quieres Dynamic Nelson-Siegel
 library(YieldCurve)
@@ -54,7 +58,26 @@ cols <- c("M1_ult", "M3_ult", "M6_ult", "Y2_ult", "Y5_ult", "Y7_ult", "Y10_ult")
 
 datas1[cols] <- lapply(datas1[cols], as.numeric)
 
-str(datas1)
+#agragamos columna con formato fecha
+datas1$Period_date <- ym(datas1$Period)
+
+#####
+
+colnames(dataac) <- c("Period", "M1_avg", "M1_ult", "M3_avg", "M3_ult",
+                    "M6_avg", "M6_ult", "Y2_avg", "Y2_ult", "Y5_avg",
+                    "Y5_ult", "Y7_avg", "Y7_ult", "Y10_avg", "Y10_ult")
+#####data de testeo
+datasac<-dataac[c(196:209), ]
+datasac<-datasac[,-c(2,4,6,8,10,12,14)]  
+
+cols <- c("M1_ult", "M3_ult", "M6_ult", "Y2_ult", "Y5_ult", "Y7_ult", "Y10_ult")
+
+datasac[cols] <- lapply(datasac[cols], as.numeric)
+
+#agragamos columna con formato fecha
+datasac$Period_date <- ym(datasac$Period)
+
+str(datasac)
 datas1$Period
 
 tau <- c(1/12, 3/12, 6/12, 2, 5, 7, 10)  # 1m, 3m, 6m, 2a, 5a, 7a, 10a
@@ -157,9 +180,59 @@ L <- cbind(
 )
 
 betas<-solve(t(L)%*%L)%*%t(L)%*%t(yields_matrix)
-betasts <- t(betas)
+betasts<-t(betas)
+betasts1 <- data.frame(t(betas))
+# Asignar nuevos nombres a las columnas
+colnames(betasts1) <- c("Beta0", "Beta1", "Beta2")
+
 
 Y_est <- t(L %*% betas)
+
+fechas <- seq(as.Date("1996-01-01"), by = "month", length.out = nrow(betasts1))
+
+datos_betas_largos <- betasts1 %>%
+  mutate(Fecha = fechas) %>%
+  pivot_longer(cols = c(Beta0, Beta1, Beta2), 
+               names_to = "Componente", 
+               values_to = "Valor")
+
+
+
+
+
+
+
+# Crear el gráfico
+ggplot(datos_betas_largos, aes(x = Fecha, y = Valor, color = Componente)) +
+  geom_line(linewidth = 0.8) +
+  labs(
+    title = "Componentes del Modelo DNS",
+    subtitle = "Evolución temporal de los factores de nivel, pendiente y curvatura",
+    x = "Fecha",
+    y = "Valor del Componente",
+    color = "Componente DNS"
+  ) +
+  scale_color_manual(
+    values = c(
+      "Beta0" = "#E41A1C",    # Rojo - Componente de nivel
+      "Beta1" = "#377EB8",    # Azul - Componente de pendiente  
+      "Beta2" = "#4DAF4A"     # Verde - Componente de curvatura
+    ),
+    labels = c(
+      "Beta0" = "Nivel (B0)",
+      "Beta1" = "Pendiente (B1)",
+      "Beta2" = "Curvatura (B2)"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+    plot.subtitle = element_text(size = 10, hjust = 0.5),
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
+  scale_y_continuous(limits = c(min(datos_betas_largos$Valor), max(datos_betas_largos$Valor)))
 
 
 ##############################################grafica
@@ -349,7 +422,7 @@ library(forecast)
 library(vars)
 
 frequency_val <- 12   # 
-h <- 4 
+h <- 14 
 
 
 
@@ -426,13 +499,105 @@ sel$selection
 p_choice <- as.integer(sel$selection["AIC(n)"])
 
 var_model <- VAR(betas_ts, p = p_choice, type = "const")
+summary(var_model)
 
-var_pred <- predict(var_model, n.ahead = 80, ci = 0.95)
+var_pred <- predict(var_model, n.ahead = 14, ci = 0.95)
 var_pred$fcst
-
+resi<-data.frame(residuals(var_model))
 beta_point <- sapply(var_pred$fcst, function(x) x[,"fcst"])
 t(beta_point)
-ypt <- t(L %*% t(beta_point))
+ypt <- data.frame(t(L %*% t(beta_point)))
+
+##ahora calculamos los errores con los valores reales de neustra data de testeo
+
+erro<-datasac[-c(1,9)] - ypt
+str(datasac)
+
+colnames(resi) <- c("Beta0", "Beta1", "Beta2")
+
+resi$observacion <- 1:nrow(resi)
+
+
+
+# Transformar a formato largo
+datos_largosresi <- resi %>%
+  pivot_longer(
+    cols = -observacion,
+    names_to = "variable",
+    values_to = "valor"
+  )
+
+# Crear el diagrama de dispersión
+ggplot(datos_largosresi, aes(x = observacion, y = valor, color = variable)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_line(alpha = 0.5) +  # Opcional: conectar puntos de la misma variable
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Residuos",
+    x = "Observación",
+    y = "Valor",
+    color = "Plazo"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+plot(erro$M1_ult)
+
+for (col in names(resi)) {
+  cat("\n----", col, "----\n")
+  print(Box.test(erro[[col]], lag = 10, type = "Ljung-Box"))
+}
+
+
+library(lmtest)
+
+# Test ARCH para heterocedasticidad
+arch_test <- arch.test(var_model)
+print(arch_test)
+
+# Test de White (para cada ecuación)
+for(i in 1:3) {
+  cat("\n=== Test para", colnames(residuals(var_model))[i], "===\n")
+  # Crear datos para test
+  resid <- residuals(var_model)[,i]
+  fitted <- fitted(var_model)[,i]
+  # Test simple de heterocedasticidad
+  white_test <- bptest(resid ~ fitted + I(fitted^2))
+  print(white_test)
+}
+
+
+# Transformar a formato largo
+
+erro$observacion <- 1:nrow(erro)
+datos_largoserro <- erro %>%
+  pivot_longer(
+    cols = -observacion,
+    names_to = "variable",
+    values_to = "valor"
+  )
+
+# Crear el diagrama de dispersión
+ggplot(datos_largoserro, aes(x = observacion, y = valor, color = variable)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_line(alpha = 0.5) +  # Opcional: conectar puntos de la misma variable
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "errores",
+    x = "Observación",
+    y = "Valor",
+    color = "Plazo"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+plot(erro$M1_ult)
+
+for (col in names(resi)) {
+  cat("\n----", col, "----\n")
+  print(Box.test(erro[[col]], lag = 10, type = "Ljung-Box"))
+}
+
+
+###en el beta dos no hay homosedasticidad pero en los demsa betas si
 
 
 
@@ -508,30 +673,79 @@ colnames(betas_ts_mat) <- c("beta0", "beta1", "beta2")
 
 ##prueba para cointegracion
 
-johansen_test <- ca.jo(betas_ts_mat, 
-                       type = "trace",     # Test de la traza
-                       ecdet = "const",    # Incluir constante
+# 1. Verificar estacionariedad de betas individuales
+adf.test(beta0)
+adf.test(beta1) 
+adf.test(beta2)
+
+# 2. Determinar rezagos óptimos
+VARselect(betas_ts_mat, lag.max = 8)
+
+# 3. Test Johansen con diferentes especificaciones
+johansen_const <- ca.jo(betas, type = "trace", ecdet = "const", K = 2)
+johansen_trend <- ca.jo(betas, type = "trace", ecdet = "trend", K = 2)
+
+# 4. Elegir rank basado en valores críticos
+summary(johansen_const)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 1. Test de Johansen CORREGIDO
+library(urca)
+remove(johansen_test)
+
+# Convertir la matriz a serie de tiempo mensual
+betas_tsmat <- ts(betas_ts_mat, start = c(1996, 1), frequency = 12)
+
+
+johansen_test <- ca.jo(betas_tsmat, 
+                       type = "trace",     
+                       ecdet = "const",    
+                       K = 2) 
+
+# Ver resultados
+summary(johansen_test)
+
+ohansen_test <- ca.jo(betas_ts_mat, 
+                       type = "trace",     
+                       ecdet = "const",    # Mantener constante (apropiado para betas DNS)
                        K = 2) 
 
 summary(johansen_test)
 
-johansen_test <- ca.jo(betas, type = "trace", ecdet = "none", K = 2)
+# 2. VERIFICAR EL RANK CORRECTO del test
+# Mira el output de summary(johansen_test) y elige r basado en:
+# - Donde el test statistic < critical value (no rechaza H0)
+# - Dado que solo beta2 es no estacionario, probablemente r = 1 es el correcto
 
-# 2. Ajuste del modelo VECM con r = 2
-vecm_model <- cajorls(johansen_test, r = 2)
+# 3. Ajustar el modelo VECM con el RANK CORRECTO (probablemente r = 1)
+vecm_model <- cajorls(johansen_test, r = 2)  # CAMBIADO de r = 2 a r = 1
 summary(vecm_model$rlm)
 
+# 4. Convertir el VECM a VAR
+var_model <- vec2var(johansen_test, r = 2)  # CAMBIADO de r = 2 a r = 1
 
-# Convertir el VECM a VAR
-var_model <- vec2var(johansen_test, r = 2)
+# 5. Pronóstico de 13 pasos adelante
+forecast <- predict(var_model, n.ahead = 14)
 
-
-# Pronóstico de 8 pasos adelante
-forecast <- predict(var_model, n.ahead = 13)
-
-# Ver los valores pronosticados
+# 6. Ver los valores pronosticados
 forecast$fcst
 
+# 7. Extraer las predicciones puntuales
 beta_pointNu <- sapply(forecast$fcst, function(x) x[,"fcst"])
 t(beta_pointNu)
 yptNu <- t(L %*% t(beta_pointNu))
@@ -549,7 +763,7 @@ selEst$selection
 p_choiceEst <- as.integer(selEst$selection["AIC(n)"])
 
 var_modelEst <- VAR(betas_tsEst, p = p_choiceEst, type = "const")
-
+summary(var_model)
 var_predEst <- predict(var_modelEst, n.ahead = h, ci = 0.95)
 var_predEst$fcst
 
