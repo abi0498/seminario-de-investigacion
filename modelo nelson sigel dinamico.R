@@ -18,12 +18,14 @@ library(YieldCurve)
 library(vars)
 library(tidyverse)
 library(ggplot2)
+
+
 library(readxl)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
 library(readxl)
-
+#
 system("git --version")
 system('git config --global user.name "abi0498"')
 system('git config --global user.email "leonel.espinoza@unah.hn"')
@@ -31,6 +33,9 @@ system("git config --global --list")
 system("git init")
 system("git remote add origin https://github.com/abi0498/seminario-de-investigacion")
 
+system('git status')
+system('git push origin main')
+system('git branch')
 getwd()
 list.files()
 
@@ -40,7 +45,7 @@ setwd("C:/Users/abies/OneDrive/Escritorio/GitHub/seminario-de-investigacion")
 archivos_xlsx <- list.files(mi_carpeta, pattern = "\\.xlsx$", full.names = TRUE)
 data <- read_excel("ADVANCED RESULT_2025-09-15_21_32.xlsx", sheet = "Exported data")
 dataac<-read_excel("ADVANCED RESULT_2025-10-20_03_22.xlsx", sheet = "Exported data")
-  
+
 
 
 
@@ -48,8 +53,8 @@ dataac<-read_excel("ADVANCED RESULT_2025-10-20_03_22.xlsx", sheet = "Exported da
 head(yield_data)
 
 colnames(data) <- c("Period", "M1_avg", "M1_ult", "M3_avg", "M3_ult",
-                          "M6_avg", "M6_ult", "Y2_avg", "Y2_ult", "Y5_avg",
-                          "Y5_ult", "Y7_avg", "Y7_ult", "Y10_avg", "Y10_ult")
+                    "M6_avg", "M6_ult", "Y2_avg", "Y2_ult", "Y5_avg",
+                    "Y5_ult", "Y7_avg", "Y7_ult", "Y10_avg", "Y10_ult")
 
 datas<-data[-c(1:4,196:226), ]
 datas1<-datas[,-c(2,4,6,8,10,12,14)]  
@@ -64,8 +69,8 @@ datas1$Period_date <- ym(datas1$Period)
 #####
 
 colnames(dataac) <- c("Period", "M1_avg", "M1_ult", "M3_avg", "M3_ult",
-                    "M6_avg", "M6_ult", "Y2_avg", "Y2_ult", "Y5_avg",
-                    "Y5_ult", "Y7_avg", "Y7_ult", "Y10_avg", "Y10_ult")
+                      "M6_avg", "M6_ult", "Y2_avg", "Y2_ult", "Y5_avg",
+                      "Y5_ult", "Y7_avg", "Y7_ult", "Y10_avg", "Y10_ult")
 #####data de testeo
 datasac<-dataac[c(196:209), ]
 datasac<-datasac[,-c(2,4,6,8,10,12,14)]  
@@ -111,8 +116,8 @@ str(yields_matrix)
 landa<-0.0601
 L <- cbind(
   1,                          # Columna 1: todos 1
-f3(tau),        # Columna 2: función1 evaluada
- f4(tau)         # Columna 3: función2 evaluada
+  f3(tau),        # Columna 2: función1 evaluada
+  f4(tau)         # Columna 3: función2 evaluada
 )
 str(yields_matrix)
 betas<-solve(t(L)%*%L)%*%t(L)%*%t(yields_matrix)
@@ -141,7 +146,7 @@ make_L <- function(tau, lamda) {
 
 # SSE perfilada: dado un lambda, estima betas_t y calcula error total
 sse_lambda <- function(lamda, yields_matrix, tau) 
-  {
+{
   L <- make_L(tau, lamda)
   # Proyección OLS: betas_hat_t(lambda)
   betas_hat <- t(solve(t(L) %*% L) %*% t(L) %*% t(yields_matrix))
@@ -456,7 +461,7 @@ print(kpss_beta1)
 
 kpss_beta2 <- kpss.test(na.omit(beta2), null = "Level")
 print(kpss_beta2)
-
+##hola
 #forzar la estacionaridad
 beta0_diff <- diff(beta0)
 beta1_diff <- diff(beta1)  
@@ -721,9 +726,9 @@ johansen_test <- ca.jo(betas_tsmat,
 summary(johansen_test)
 
 ohansen_test <- ca.jo(betas_ts_mat, 
-                       type = "trace",     
-                       ecdet = "const",    # Mantener constante (apropiado para betas DNS)
-                       K = 2) 
+                      type = "trace",     
+                      ecdet = "const",    # Mantener constante (apropiado para betas DNS)
+                      K = 2) 
 
 summary(johansen_test)
 
@@ -770,6 +775,634 @@ var_predEst$fcst
 beta_pointEst <- sapply(var_predEst$fcst, function(x) x[,"fcst"])
 t(beta_pointEst)
 yptEst <- t(L %*% t(beta_pointEst))
+
+
+########################DCC GARCH
+
+install.packages("rmgarch")
+library(rmgarch)
+library(vars)
+
+
+
+
+predicciones_ar <- data.frame(
+  Beta_Nivel = pred_beta1,
+  Beta_Pendiente = pred_beta2,
+  Beta_Curvatura = pred_beta3
+)
+print(predicciones_ar)
+
+# Especificación del GARCH univariado (por cada serie)
+uspec <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(4, 0), include.mean = TRUE),
+  distribution.model = "norm"
+)
+
+# Especificación conjunta (multivariada)
+spec_dcc <- dccspec(
+  uspec = multispec(replicate(3, uspec)),  # 3 series
+  dccOrder = c(1, 1),
+  distribution = "mvnorm"
+)
+
+dcc_fit <- dccfit(spec_dcc, data = betas_ts)
+# Obtener el log-likelihood y calcular AIC/BIC
+log_lik <- likelihood(dcc_fit)
+n_params <- length(coef(dcc_fit))
+n_obs <- nrow(betas_ts)
+
+AIC <- (-2 * log_lik + 2 * n_params)
+BIC <- (-2 * log_lik + log(n_obs) * n_params)
+
+cat("AIC:", AIC, "\n")
+cat("BIC:", BIC, "\n")
+cat("Log-Likelihood:", log_lik, "\n")
+
+
+# Residuos estandarizados MANUALMENTE
+
+sigma_garch <- sigma(dcc_fit)  # Volatilidades condicionales
+# FORMA CORRECTA DE OBTENER RESIDUOS ESTANDARIZADOS
+resid_var_garch <- residuals(dcc_fit)  
+resid_std_var_garch <- resid_var_garch / sigma_garch
+
+z1 <- resid_std_var_garch [,1]
+z2 <- resid_std_var_garch [,2]
+z3 <- resid_std_var_garch [,3]
+z1_vec <- as.numeric(z1[,1])
+z2_vec <- as.numeric(z2[,1])
+z3_vec <- as.numeric(z3[,1])
+
+# Serie 1
+qqnorm(z1_vec, main="QQ-Plot Residuales Estandarizados - Serie 1")
+qqline(z1_vec, col="red")
+
+# Serie 2
+qqnorm(z2_vec, main="QQ-Plot Residuales Estandarizados - Serie 2")
+qqline(z2_vec, col="red")
+
+# Serie 3
+qqnorm(z3_vec, main="QQ-Plot Residuales Estandarizados - Serie 3")
+qqline(z3_vec, col="red")
+
+
+shapiro.test(z1_vec)  # Prueba normalidad para la primera serie
+shapiro.test(z2_vec)
+shapiro.test(z3_vec)
+
+
+library(FinTS)
+
+cat("=== Tests ARCH en residuos estandarizados ===\n")
+for(i in 1:3) {
+  arch_test <- ArchTest(resid_std_var_garch[,i], lags = 5)
+  cat("Serie", i, "- ARCH Test p-value:", arch_test$p.value)
+  
+  if(arch_test$p.value > 0.05) {
+    cat(" ✅ NO hay heterocedasticidad (modelo bien ajustado)\n")
+  } else {
+    cat(" ❌ Persiste heterocedasticidad\n")
+  }
+}
+
+###prueba de correlacion 
+
+for(i in 1:3) {
+  lb_test <- Box.test(resid_std_var_garch[,i], lag = 5, type = "Ljung-Box")
+  cat("Serie", i, "- p-value Ljung-Box:", lb_test$p.value, "\n")
+}
+
+# Asumiendo que 'residuals_std' es tu matriz de residuos estandarizados (n x 3)
+
+cat("=== PRUEBA LJUNG-BOX PARA 3 SERIES ===\n\n")
+
+for(i in 1:3) {
+  lb_test <- Box.test(resid_std_var_garch[,i], lag = 10, type = "Ljung-Box")
+  
+  cat("Serie", i, ":\n")
+  if(lb_test$p.value > 0.05) {
+    cat("  No rechazamos H₀: No hay evidencia de autocorrelación (p =", 
+        round(lb_test$p.value, 4), ")\n")
+    
+  } else {
+    cat("  Rechazamos H₀: Existe autocorrelación significativa (p =", 
+        round(lb_test$p.value, 4), ")\n")
+    
+  }
+  cat("  Estadístico Ljung-Box:", round(lb_test$statistic, 4), "\n")
+  cat("----------------------------------------\n")
+}
+
+n_ahead <- 14  # ← NÚMERO DE PERIODOS A PREDECIR
+dcc_forecast <- dccforecast(dcc_fit, n.ahead = n_ahead)
+betas_garcha<- dcc_forecast@mforecast$mu
+
+betas_grach <- matrix(c(
+  2.261656, -0.4662493, -4.500659,
+  2.287097, -0.6159238, -4.527743,
+  2.263190, -0.6685824, -4.354948,
+  2.232984, -0.7764174, -4.209840,
+  2.221265, -0.9080763, -4.054821,
+  2.201177, -1.0142038, -3.916036,
+  2.179966, -1.1265108, -3.787265,
+  2.161837, -1.2365482, -3.670632,
+  2.142251, -1.3333401, -3.564392,
+  2.122428, -1.4237443, -3.467960,
+  2.103081, -1.5059659, -3.380351,
+  2.083442, -1.5780414, -3.300800,
+  2.063718, -1.6419668, -3.228554,
+  2.044028, -1.6978876, -3.162949
+), ncol = 3, byrow = TRUE)
+
+
+
+
+
+yptgarch <- t(L %*% t(betas_grach))
+
+errogarch<-datasac[-c(1,9)] - yptgarch
+sum(errogarch^2)
+
+errogarch$observacion <- 1:nrow(errogarch)
+datos_largoserrogarch<- errogarch %>%
+  pivot_longer(
+    cols = -observacion,
+    names_to = "variable",
+    values_to = "valor"
+  )
+
+# Crear el diagrama de dispersión
+ggplot(datos_largoserrogarch, aes(x = observacion, y = valor, color = variable)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_line(alpha = 0.5) +  # Opcional: conectar puntos de la misma variable
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Errores VAR + DCC-GARCH",
+    x = "Observación",
+    y = "Valor",
+    color = "Plazo"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+############### VAR+ DCC garch
+
+dcc_fit_mejorado <- dccfit(spec_dcc, data = residuals(var_model))  # <- ¡Aquí la magia!
+
+n_ahead <- 14  # ← NÚMERO DE PERIODOS A PREDECIR
+dcc_forecastmejorado <- dccforecast(dcc_fit_mejorado, n.ahead = n_ahead)
+residuales_forecast <- dcc_forecastmejorado@mforecast$mu
+
+residuales_forecast_mat <- matrix(
+  unlist(residuales_forecast),       # aplana la lista en un vector
+  ncol = 3,                          # 3 columnas = 3 betas
+  byrow = TRUE                        # cada paso queda en una fila
+)
+
+
+
+forecast_series_originalesdcc <- beta_point + residuales_forecast_mat
+
+
+
+# Test ARCH para heterocedasticidad
+
+##garfica residuos
+
+resi<-data.frame(residuals(var_model))
+
+resistd<-data.frame(resid_no_std)
+resistd$observacion <- 1:nrow(resistd)
+
+
+
+# Transformar a formato largo
+datos_largosresistd <- resistd %>%
+  pivot_longer(
+    cols = -observacion,
+    names_to = "variable",
+    values_to = "valor"
+  )
+
+# Crear el diagrama de dispersión
+ggplot(datos_largosresistd, aes(x = observacion, y = valor, color = variable)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_line(alpha = 0.5) +  # Opcional: conectar puntos de la misma variable
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Residuos DCC-GARCH",
+    x = "Observación",
+    y = "Valor",
+    color = "Plazo"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+plot(erro$M1_ult)
+
+
+resid_no_std <- residuals(dcc_fit)
+sigma_t <- sigma(dcc_fit)
+resid_std <- resid_no_std / sigma_t   # Esto da lo mismo
+
+
+
+# FORMA CORRECTA DE OBTENER RESIDUOS ESTANDARIZADOS
+resid_var_garch <- residuals(dcc_fit)                    # Residuos brutos
+
+# Residuos estandarizados MANUALMENTE
+sigma_garch <- sigma(dcc_fit)  # Volatilidades condicionales
+resid_std_var_garch <- resid_var_garch / sigma_garch
+
+
+
+library(FinTS)
+
+cat("=== Tests ARCH en residuos estandarizados ===\n")
+for(i in 1:3) {
+  arch_test <- ArchTest(resid_std_var_garch[,i], lags = 5)
+  cat("Serie", i, "- ARCH Test p-value:", arch_test$p.value)
+  
+  if(arch_test$p.value > 0.05) {
+    cat(" ✅ NO hay heterocedasticidad (modelo bien ajustado)\n")
+  } else {
+    cat(" ❌ Persiste heterocedasticidad\n")
+  }
+}
+
+
+
+yptgarchDCC <- t(L %*% t(forecast_series_originalesdcc))
+
+errogarchDC<-datasac[-c(1,9)] - yptgarchDCC
+
+errogarch$observacion <- 1:nrow(errogarch)
+datos_largoserrogarch<- errogarch %>%
+  pivot_longer(
+    cols = -observacion,
+    names_to = "variable",
+    values_to = "valor"
+  )
+
+# Crear el diagrama de dispersión
+ggplot(datos_largoserrogarch, aes(x = observacion, y = valor, color = variable)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_line(alpha = 0.5) +  # Opcional: conectar puntos de la misma variable
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Errores DCC-GARCH",
+    x = "Observación",
+    y = "Valor",
+    color = "Plazo"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+###solo otr aprueba
+
+# Especificación MEJORADA para betas DNS:
+uspec_mejorado <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),  # ← CLAVE!
+  distribution.model = "std"  # t-Student para colas pesadas
+)
+
+# Especificación conjunta
+spec_dcc_mejorado <- dccspec(
+  uspec = multispec(replicate(3, uspec_mejorado)),
+  dccOrder = c(1, 1),
+  distribution = "mvt"  # t-Student multivariante
+)
+
+# Ajustar modelo mejorado
+dcc_fit_mejorado <- dccfit(spec_dcc_mejorado, data = betas_ts)
+
+resid_no_stdmejor <- residuals(dcc_fit_mejorado)
+sigma_tmejor <- sigma(dcc_fit_mejorado)
+resid_stdmejor <- resid_no_stdmejor / sigma_tmejor   # Esto da lo mismo
+
+for(i in 1:3) {
+  cat("Serie", i, "- Breusch-Godfrey test:\n")
+  bg_test <- bgtest(resid_std_var_garch[, i] ~ 1, order = 10)
+  print(bg_test)
+  cat("p-value:", bg_test$p.value, "\n\n")
+}
+
+z1 <- resid_stdmejor [,1]
+z2 <- resid_stdmejor [,2]
+z3 <- resid_stdmejor [,3]
+z1_vec <- as.numeric(z1[,1])
+z2_vec <- as.numeric(z2[,1])
+z3_vec <- as.numeric(z3[,1])
+
+# Serie 1
+qqnorm(z1_vec, main="QQ-Plot Residuales Estandarizados - Serie 1")
+qqline(z1_vec, col="red")
+
+# Serie 2
+qqnorm(z2_vec, main="QQ-Plot Residuales Estandarizados - Serie 2")
+qqline(z2_vec, col="red")
+
+# Serie 3
+qqnorm(z3_vec, main="QQ-Plot Residuales Estandarizados - Serie 3")
+qqline(z3_vec, col="red")
+
+cat("=== Tests ARCH en residuos estandarizados ===\n")
+for(i in 1:3) {
+  arch_test <- ArchTest(resid_stdmejor[,i], lags = 5)
+  cat("Serie", i, "- ARCH Test p-value:", arch_test$p.value)
+  
+  if(arch_test$p.value > 0.05) {
+    cat(" ✅ NO hay heterocedasticidad (modelo bien ajustado)\n")
+  } else {
+    cat(" ❌ Persiste heterocedasticidad\n")
+  }
+}
+
+
+
+
+
+n_ahead <- 14  # ← NÚMERO DE PERIODOS A PREDECIR
+dcc_forecast <- dccforecast(dcc_fit, n.ahead = n_ahead)
+betas_garcha<- dcc_forecast@mforecast$mu
+
+betas_grach <- matrix(c(
+  2.261656, -0.4662493, -4.500659,
+  2.287097, -0.6159238, -4.527743,
+  2.263190, -0.6685824, -4.354948,
+  2.232984, -0.7764174, -4.209840,
+  2.221265, -0.9080763, -4.054821,
+  2.201177, -1.0142038, -3.916036,
+  2.179966, -1.1265108, -3.787265,
+  2.161837, -1.2365482, -3.670632,
+  2.142251, -1.3333401, -3.564392,
+  2.122428, -1.4237443, -3.467960,
+  2.103081, -1.5059659, -3.380351,
+  2.083442, -1.5780414, -3.300800,
+  2.063718, -1.6419668, -3.228554,
+  2.044028, -1.6978876, -3.162949
+), ncol = 3, byrow = TRUE)
+
+
+# Test ARCH para heterocedasticidad
+
+##garfica residuos
+
+resi<-data.frame(residuals(var_model))
+
+resistd<-data.frame(resid_no_std)
+resistd$observacion <- 1:nrow(resistd)
+
+
+
+# Transformar a formato largo
+datos_largosresistd <- resistd %>%
+  pivot_longer(
+    cols = -observacion,
+    names_to = "variable",
+    values_to = "valor"
+  )
+
+# Crear el diagrama de dispersión
+ggplot(datos_largosresistd, aes(x = observacion, y = valor, color = variable)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_line(alpha = 0.5) +  # Opcional: conectar puntos de la misma variable
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "residuos VAR + DCC-GARCH",
+    x = "Observación",
+    y = "Valor",
+    color = "Plazo"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+plot(erro$M1_ult)
+
+#################### pruebas dcc-garch
+resid_no_std <- residuals(dcc_fit)
+sigma_t <- sigma(dcc_fit)
+resid_std <- resid_no_std / sigma_t   # Esto da lo mismo
+
+
+
+# FORMA CORRECTA DE OBTENER RESIDUOS ESTANDARIZADOS
+resid_var_garch <- residuals(dcc_fit)                    # Residuos brutos
+
+# Residuos estandarizados MANUALMENTE
+sigma_garch <- sigma(dcc_fit)  # Volatilidades condicionales
+resid_std_var_garch <- resid_var_garch / sigma_garch
+
+z1 <- resid_std_var_garch [,1]
+z2 <- resid_std_var_garch [,2]
+z3 <- resid_std_var_garch [,3]
+z1_vec <- as.numeric(z1[,1])
+z2_vec <- as.numeric(z2[,1])
+z3_vec <- as.numeric(z3[,1])
+
+# Serie 1
+qqnorm(z1_vec, main="QQ-Plot Residuales Estandarizados - Serie 1")
+qqline(z1_vec, col="red")
+
+# Serie 2
+qqnorm(z2_vec, main="QQ-Plot Residuales Estandarizados - Serie 2")
+qqline(z2_vec, col="red")
+
+# Serie 3
+qqnorm(z3_vec, main="QQ-Plot Residuales Estandarizados - Serie 3")
+qqline(z3_vec, col="red")
+
+
+shapiro.test(z1_vec)  # Prueba normalidad para la primera serie
+shapiro.test(z2_vec)
+shapiro.test(z3_vec)
+
+
+library(FinTS)
+
+cat("=== Tests ARCH en residuos estandarizados ===\n")
+for(i in 1:3) {
+  arch_test <- ArchTest(resid_std_var_garch[,i], lags = 5)
+  cat("Serie", i, "- ARCH Test p-value:", arch_test$p.value)
+  
+  if(arch_test$p.value > 0.05) {
+    cat(" ✅ NO hay heterocedasticidad (modelo bien ajustado)\n")
+  } else {
+    cat(" ❌ Persiste heterocedasticidad\n")
+  }
+}
+
+###prueba de correlacion 
+
+for(i in 1:3) {
+  lb_test <- Box.test(resid_std_var_garch[,i], lag = 5, type = "Ljung-Box")
+  cat("Serie", i, "- p-value Ljung-Box:", lb_test$p.value, "\n")
+}
+
+# Asumiendo que 'residuals_std' es tu matriz de residuos estandarizados (n x 3)
+
+cat("=== PRUEBA LJUNG-BOX PARA 3 SERIES ===\n\n")
+
+for(i in 1:3) {
+  lb_test <- Box.test(resid_std_var_garch[,i], lag = 10, type = "Ljung-Box")
+  
+  cat("Serie", i, ":\n")
+  if(lb_test$p.value > 0.05) {
+    cat("  No rechazamos H₀: No hay evidencia de autocorrelación (p =", 
+        round(lb_test$p.value, 4), ")\n")
+    cat("  ✓ Los residuos parecen ruido blanco\n")
+  } else {
+    cat("  Rechazamos H₀: Existe autocorrelación significativa (p =", 
+        round(lb_test$p.value, 4), ")\n")
+    cat("  ✗ Posible problema en la especificación del modelo\n")
+  }
+  cat("  Estadístico Ljung-Box:", round(lb_test$statistic, 4), "\n")
+  cat("----------------------------------------\n")
+}
+
+
+
+yptgarch <- t(L %*% t(betas_grach))
+
+errogarch<-datasac[-c(1,9)] - yptgarch
+
+errogarch$observacion <- 1:nrow(errogarch)
+datos_largoserrogarch<- errogarch %>%
+  pivot_longer(
+    cols = -observacion,
+    names_to = "variable",
+    values_to = "valor"
+  )
+
+# Crear el diagrama de dispersión
+ggplot(datos_largoserrogarch, aes(x = observacion, y = valor, color = variable)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_line(alpha = 0.5) +  # Opcional: conectar puntos de la misma variable
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Errores VAR + DCC-GARCH",
+    x = "Observación",
+    y = "Valor",
+    color = "Plazo"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+############### VAR+ DCC garch
+
+dcc_fit_mejorado <- dccfit(spec_dcc, data = residuals(var_model))  # <- ¡Aquí la magia!
+
+n_ahead <- 14  # ← NÚMERO DE PERIODOS A PREDECIR
+dcc_forecastmejorado <- dccforecast(dcc_fit_mejorado, n.ahead = n_ahead)
+residuales_forecast <- dcc_forecastmejorado@mforecast$mu
+
+residuales_forecast_mat <- matrix(
+  unlist(residuales_forecast),       # aplana la lista en un vector
+  ncol = 3,                          # 3 columnas = 3 betas
+  byrow = TRUE                        # cada paso queda en una fila
+)
+
+
+
+forecast_series_originalesdcc <- beta_point + residuales_forecast_mat
+
+
+
+# Test ARCH para heterocedasticidad
+
+##garfica residuos
+
+resi<-data.frame(residuals(var_model))
+
+resistd<-data.frame(resid_no_std)
+resistd$observacion <- 1:nrow(resistd)
+
+
+#
+# Transformar a formato largo
+datos_largosresistd <- resistd %>%
+  pivot_longer(
+    cols = -observacion,
+    names_to = "variable",
+    values_to = "valor"
+  )
+
+# Crear el diagrama de dispersión
+ggplot(datos_largosresistd, aes(x = observacion, y = valor, color = variable)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_line(alpha = 0.5) +  # Opcional: conectar puntos de la misma variable
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Residuos DCC-GARCH",
+    x = "Observación",
+    y = "Valor",
+    color = "Plazo"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+plot(erro$M1_ult)
+
+
+resid_no_std <- residuals(dcc_fit)
+sigma_t <- sigma(dcc_fit)
+resid_std <- resid_no_std / sigma_t   # Esto da lo mismo
+
+
+
+# FORMA CORRECTA DE OBTENER RESIDUOS ESTANDARIZADOS
+resid_var_garch <- residuals(dcc_fit)                    # Residuos brutos
+
+# Residuos estandarizados MANUALMENTE
+sigma_garch <- sigma(dcc_fit)  # Volatilidades condicionales
+resid_std_var_garch <- resid_var_garch / sigma_garch
+
+
+
+library(FinTS)
+
+cat("=== Tests ARCH en residuos estandarizados ===\n")
+for(i in 1:3) {
+  arch_test <- ArchTest(resid_std_var_garch[,i], lags = 5)
+  cat("Serie", i, "- ARCH Test p-value:", arch_test$p.value)
+  
+  if(arch_test$p.value > 0.05) {
+    cat(" ✅ NO hay heterocedasticidad (modelo bien ajustado)\n")
+  } else {
+    cat(" ❌ Persiste heterocedasticidad\n")
+  }
+}
+
+
+
+yptgarchDCC <- t(L %*% t(forecast_series_originalesdcc))
+
+errogarchDC<-datasac[-c(1,9)] - yptgarchDCC
+
+errogarch$observacion <- 1:nrow(errogarch)
+datos_largoserrogarch<- errogarch %>%
+  pivot_longer(
+    cols = -observacion,
+    names_to = "variable",
+    values_to = "valor"
+  )
+#
+# Crear el diagrama de dispersión
+ggplot(datos_largoserrogarch, aes(x = observacion, y = valor, color = variable)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_line(alpha = 0.5) +  # Opcional: conectar puntos de la misma variable
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Errores DCC-GARCH",
+    x = "Observación",
+    y = "Valor",
+    color = "Plazo"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
 
 
 
